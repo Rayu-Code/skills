@@ -9,11 +9,16 @@ Each skill is a folder under `skills/<name>/` with a `SKILL.md` (YAML
 frontmatter: `name`, `description`) plus any reference files.
 
 ## Skills
+- `rayu-algorithmic-art`
 - `rayu-api-design`
+- `rayu-brand-guidelines`
+- `rayu-canvas-design`
 - `rayu-design-system`
 - `rayu-doc-export`
 - `rayu-frontend-design`
 - `rayu-mcp-builder`
+- `rayu-theme-factory`
+- `rayu-web-artifacts-builder`
 - `rayu-web-testing`
 
 ## Install a single skill into Rayu

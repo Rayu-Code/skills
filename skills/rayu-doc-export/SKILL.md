@@ -1,151 +1,261 @@
 ---
 name: rayu-doc-export
-description: Generate office documents and PDFs (docx, xlsx, pptx, pdf) programmatically using open-source libraries. Use when a task needs to produce a Word, Excel, PowerPoint, or PDF deliverable from data or content.
+description: Generate, read, edit, and manipulate office documents (Word .docx, PowerPoint .pptx, Excel .xlsx, and PDF). Use when the user needs to create reports, slide decks, spreadsheets, or PDFs from data or content; or when reading/extracting content from any of these formats. Covers both creation and editing workflows.
 ---
 
-# Rayu Doc Export
+# Rayu Document Export
 
-Produce real office files with well-maintained open-source libraries. Pick the library by output format and ecosystem, install it, generate the file, and verify it opens. All guidance below is built on the libraries' own public documentation.
+Unified skill for creating, reading, and editing Word documents, presentations, spreadsheets, and PDFs.
 
-## Library map
+## Supported Formats
 
-| Format | Python (recommended) | JavaScript/Node |
-|---|---|---|
-| **Word** `.docx` | `python-docx` | `docx` (npm) |
-| **Excel** `.xlsx` | `openpyxl` | `exceljs` |
-| **PowerPoint** `.pptx` | `python-pptx` | `pptxgenjs` |
-| **PDF** | `reportlab` (or `weasyprint` for HTML→PDF) | `pdf-lib` |
+| Format | Read | Create | Edit |
+|--------|------|--------|------|
+| **DOCX** | pandoc, unpack XML | docx-js (JavaScript) | Unpack → Edit XML → Pack |
+| **PPTX** | markitdown, unpack XML | pptxgenjs (JavaScript) | Unpack → Edit XML → Pack |
+| **XLSX** | pandas, openpyxl | openpyxl (Python) | openpyxl load/save |
+| **PDF**  | pypdf, pdfplumber | reportlab (Python) | pypdf, qpdf |
 
-Python has the most mature OOXML coverage; use it unless the project is JS-only.
+## Quick Reference
 
-## Word — python-docx
+| Task | Tool | Command |
+|------|------|---------|
+| Read DOCX text | pandoc | `pandoc --track-changes=all document.docx -o output.md` |
+| Read PPTX text | markitdown | `python -m markitdown presentation.pptx` |
+| Read XLSX data | pandas | `pd.read_excel('file.xlsx')` |
+| Read PDF text | pypdf | `PdfReader("doc.pdf").pages[0].extract_text()` |
+
+---
+
+## DOCX (Word) — docx-js
+
+### Creating New Documents
+
+```javascript
+const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+        Header, Footer, AlignmentType, PageBreak, HeadingLevel,
+        LevelFormat, WidthType, ShadingType, BorderStyle } = require('docx');
+
+const doc = new Document({
+  styles: {
+    default: { document: { run: { font: "Arial", size: 24 } } }, // 12pt default
+    paragraphStyles: [
+      { id: "Heading1", name: "Heading 1", basedOn: "Normal", quickFormat: true,
+        run: { size: 32, bold: true, font: "Arial" },
+        paragraph: { spacing: { before: 240, after: 240 }, outlineLevel: 0 } },
+    ]
+  },
+  sections: [{
+    properties: {
+      page: {
+        size: { width: 12240, height: 15840 }, // US Letter
+        margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+      }
+    },
+    children: [
+      new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Title")] }),
+      new Paragraph({ children: [new TextRun("Body text")] }),
+    ]
+  }]
+});
+
+Packer.toBuffer(doc).then(buffer => require('fs').writeFileSync("output.docx", buffer));
+```
+
+### Key Rules
+- **Page size**: Default is A4. Always set explicitly for US Letter: `{ width: 12240, height: 15840 }` (DXA units, 1440 = 1 inch)
+- **No `\n`**: Use separate `Paragraph` elements
+- **No unicode bullets**: Use `LevelFormat.BULLET` with numbering config
+- **ImageRun requires `type`**: `type: "png"` or `type: "jpg"`
+- **Tables**: Always set `width` on table AND each cell. Use `WidthType.DXA`, never `WidthType.PERCENTAGE`
+- **PageBreak**: Must be inside `Paragraph`: `new Paragraph({ children: [new PageBreak()] })`
+- **ShadingType.CLEAR**: Never use `ShadingType.SOLID` for table shading
+
+### Editing Existing Documents
 
 ```bash
-pip install python-docx   # NOTE: package is "python-docx"; import is "docx"
+# 1. Unpack
+python scripts/office/unpack.py document.docx unpacked/
+
+# 2. Edit XML in unpacked/word/
+#    Use smart quote entities: &#x2019; (apostrophe), &#x201C; (left double), &#x201D; (right double)
+
+# 3. Pack
+python scripts/office/pack.py unpacked/ output.docx --original document.docx
 ```
 
-```python
-from docx import Document
-from docx.shared import Pt, Inches
+---
 
-doc = Document()
-doc.add_heading('Quarterly Report', level=1)
-doc.add_paragraph('Summary of results for Q1.')
-doc.add_paragraph('A bullet item', style='List Bullet')
+## PPTX (PowerPoint) — pptxgenjs
 
-table = doc.add_table(rows=1, cols=2)
-table.style = 'Light Grid Accent 1'
-hdr = table.rows[0].cells
-hdr[0].text, hdr[1].text = 'Metric', 'Value'
-row = table.add_row().cells
-row[0].text, row[1].text = 'Revenue', '$1.2M'
+### Creating from Scratch
 
-doc.add_picture('chart.png', width=Inches(5))
-doc.save('report.docx')
+```javascript
+const PptxGenJS = require('pptxgenjs');
+const pptx = new PptxGenJS();
+
+pptx.layout = 'LAYOUT_16x9';
+
+const slide = pptx.addSlide();
+slide.addText("Hello World", { x: 1, y: 1, w: 8, h: 1, fontSize: 44, bold: true });
+
+pptx.writeFile({ fileName: "output.pptx" });
 ```
 
-Key objects: `Document`, `add_heading`, `add_paragraph` (+ `style`), `add_table`/`add_row`, `add_picture`. Runs (`paragraph.add_run('x').bold = True`) control inline formatting.
+### Design Principles
+- **Color**: Pick topic-informed palettes. One color dominates (60-70%), with 1-2 supporting tones and one sharp accent
+- **Typography**: Slide title 36-44pt bold, section header 20-24pt, body 14-16pt, captions 10-12pt
+- **Layout**: Vary columns, cards, and callouts. Every slide needs a visual element (image, chart, icon, or shape)
+- **Contrast**: Dark backgrounds for title/conclusion, light for content; or commit to dark throughout
 
-## Excel — openpyxl
-
+### Common Tasks
 ```bash
-pip install openpyxl
+# Read content
+python -m markitdown presentation.pptx
+
+# Convert to images for QA
+python scripts/office/soffice.py --headless --convert-to pdf output.pptx
+pdftoppm -jpeg -r 150 output.pdf slide
 ```
+
+---
+
+## XLSX (Excel) — openpyxl / pandas
+
+### Creating New Spreadsheets
 
 ```python
 from openpyxl import Workbook
-from openpyxl.styles import Font
+from openpyxl.styles import Font, PatternFill, Alignment
 
 wb = Workbook()
-ws = wb.active
-ws.title = 'Sales'
-ws.append(['Month', 'Revenue'])          # write a row
-ws['A1'].font = Font(bold=True)
-ws.append(['Jan', 1200])
-ws['B3'] = '=SUM(B2:B2)'                  # formulas are just strings
-ws.column_dimensions['A'].width = 16
-wb.save('sales.xlsx')
+sheet = wb.active
+sheet['A1'] = 'Hello'
+sheet['B1'] = 'World'
+sheet.append(['Row', 'of', 'data'])
+
+# Add formulas, NOT hardcoded values
+sheet['B10'] = '=SUM(B2:B9)'
+
+# Formatting
+sheet['A1'].font = Font(bold=True, color='FF0000')
+sheet['A1'].fill = PatternFill('solid', start_color='FFFF00')
+sheet.column_dimensions['A'].width = 20
+
+wb.save('output.xlsx')
 ```
 
-Key objects: `Workbook`, `wb.active`/`wb.create_sheet`, cell access (`ws['A1']` or `ws.cell(row, column)`), `ws.append(list)`, styles (`Font`, `PatternFill`, `Alignment`), and `wb.save`. For huge sheets use `write_only=True`.
+### CRITICAL: Use Excel Formulas
 
-## PowerPoint — python-pptx
+```python
+# WRONG - hardcodes a value
+sheet['B10'] = 5000
 
+# CORRECT - dynamic formula
+sheet['B10'] = '=SUM(B2:B9)'
+```
+
+### Financial Models — Color Conventions
+- **Blue text (RGB: 0,0,255)**: Hardcoded inputs
+- **Black text**: Formulas and calculations
+- **Green text (RGB: 0,128,0)**: Links to other sheets
+- **Red text (RGB: 255,0,0)**: External file links
+- **Yellow background**: Key assumptions
+
+### Recalculating Formulas
+
+After creating/modifying with openpyxl:
 ```bash
-pip install python-pptx
+python scripts/recalc.py output.xlsx
 ```
 
+### Reading Data
+
 ```python
-from pptx import Presentation
-from pptx.util import Inches, Pt
-
-prs = Presentation()
-title_slide = prs.slides.add_slide(prs.slide_layouts[0])  # 0 = Title
-title_slide.shapes.title.text = 'Rayu Deck'
-title_slide.placeholders[1].text = 'Generated with python-pptx'
-
-bullets = prs.slides.add_slide(prs.slide_layouts[1])      # 1 = Title+Content
-bullets.shapes.title.text = 'Agenda'
-tf = bullets.placeholders[1].text_frame
-tf.text = 'First point'
-tf.add_paragraph().text = 'Second point'
-
-prs.save('deck.pptx')
+import pandas as pd
+df = pd.read_excel('file.xlsx')
 ```
 
-Key objects: `Presentation`, `slide_layouts` (indexes into the template's layouts), `shapes.title`/`placeholders`, `text_frame` + `add_paragraph`, and `shapes.add_textbox`/`add_picture` for free placement.
+---
 
-## PDF — reportlab (Python) or pdf-lib (JS)
+## PDF — pypdf / pdfplumber / reportlab
 
-**reportlab, low-level canvas** (precise placement):
+### Creating PDFs
 
 ```python
-from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-
-c = canvas.Canvas('out.pdf', pagesize=letter)
-c.drawString(72, 720, 'Hello World')   # origin is bottom-left
-c.showPage()                            # finish the page
-c.save()
-```
-
-**reportlab, Platypus** (flowing documents — paragraphs, tables, page breaks):
-
-```python
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Table
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 
+doc = SimpleDocTemplate("report.pdf", pagesize=letter)
 styles = getSampleStyleSheet()
-doc = SimpleDocTemplate('report.pdf')
-doc.build([
-    Paragraph('Quarterly Report', styles['Title']),
-    Paragraph('Summary text.', styles['BodyText']),
-    Table([['Metric', 'Value'], ['Revenue', '$1.2M']]),
-])
+story = [
+    Paragraph("Report Title", styles['Title']),
+    Spacer(1, 12),
+    Paragraph("Body text..." * 20, styles['Normal']),
+]
+doc.build(story)
 ```
 
-**pdf-lib (Node/browser):**
+### Reading/Extracting Text
 
-```js
-import { PDFDocument, StandardFonts } from 'pdf-lib'
+```python
+from pypdf import PdfReader
 
-const pdf = await PDFDocument.create()
-const page = pdf.addPage([595, 842])           // A4 in points
-const font = await pdf.embedFont(StandardFonts.Helvetica)
-page.drawText('Hello World', { x: 72, y: 770, size: 18, font })
-const bytes = await pdf.save()                  // Uint8Array → write to disk
+reader = PdfReader("document.pdf")
+for page in reader.pages:
+    print(page.extract_text())
 ```
 
-Use Platypus/reportlab when generating from scratch; if you already have HTML/CSS, `weasyprint` (HTML→PDF) is often faster to a polished result.
+### Extract Tables
 
-## Common pitfalls
+```python
+import pdfplumber
 
-- **Wrong Word package:** install `python-docx` (not the abandoned `docx`); the import is still `import docx` / `from docx import Document`.
-- **reportlab coordinates** start at the bottom-left, and `showPage()` + `save()` are required or the file is empty/corrupt.
-- **pptx layout indexes** depend on the template; enumerate `prs.slide_layouts` rather than guessing.
-- **openpyxl formulas** are stored as strings and only evaluated when the file is opened in Excel (openpyxl won't compute them).
-- **Fonts/images:** embed fonts and reference image paths that exist at generate time; verify the output opens before reporting done.
+with pdfplumber.open("document.pdf") as pdf:
+    for page in pdf.pages:
+        tables = page.extract_tables()
+        for table in tables:
+            print(table)
+```
 
-## Working in the rayu swarm
+### Merge / Split / Watermark
 
-Use this for any "produce a report/spreadsheet/deck/PDF" deliverable. Match the data to the right library, generate into the project's output path, and confirm the file is valid. These are open-source libraries — no proprietary document engine is required.
+```python
+from pyp挪dfsdf import PdfReader, PdfWriter
+
+# Merge
+writer = PdfWriter()
+for pdf_file in ["a.pdf", "b.pdf"]:
+    for page in PdfReader(pdf_file).pages:
+        writer.add_page(page)
+with open("merged.pdf", "wb") as f:
+    writer.write(f)
+
+# Watermark
+reader = PdfReader("document.pdf")
+watermark = PdfReader("watermark.pdf").pages[0]
+writer = PdfWriter()
+for page in reader.pages:
+    page.merge_page(watermark)
+    writer.add_page(page)
+```
+
+---
+
+## Common Pitfalls
+
+| Don't | Do |
+|-------|----|
+| Hardcode calculated values in Excel | Use Excel formulas (`=SUM(...)`) |
+| Use `WidthType.PERCENTAGE` in DOCX | Use `WidthType.DXA` |
+| Use unicode bullets | Use `LevelFormat.BULLET` with numbering config |
+| Use `\n` in docx-js | Use separate `Paragraph` elements |
+| Render text-only slides | Add visual elements to every slide |
+| Leave `max_tokens` low for long reports | Default to 16000 (non-streaming) / 64000 (streaming) |
+
+## Dependencies
+
+- **python**: `openpyxl`, `pandas`, `pypdf`, `pdfplumber`, `reportlab`
+- **node**: `docx`, `pptxgenjs`
+- **cli**: `pandoc`, `qpdf`, `pdftoppm`, LibreOffice (`soffice`)
